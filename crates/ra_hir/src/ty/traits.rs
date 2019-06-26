@@ -37,7 +37,7 @@ impl ChalkSolver {
     ) -> Option<chalk_solve::Solution> {
         let context = ChalkContext { db, krate: self.krate };
         debug!("solve goal: {:?}", goal);
-        let solution = self.inner.lock().solve_with_fuel(&context, goal, Some(1000));
+        let solution = self.inner.lock().solve(&context, goal);
         debug!("solve({:?}) => {:?}", goal, solution);
         solution
     }
@@ -83,19 +83,6 @@ pub(crate) fn impls_for_trait_query(
     let crate_impl_blocks = db.impls_in_crate(krate);
     impls.extend(crate_impl_blocks.lookup_impl_blocks_for_trait(trait_));
     impls.into_iter().collect::<Vec<_>>().into()
-}
-
-fn solve(
-    db: &impl HirDatabase,
-    krate: Crate,
-    goal: &chalk_ir::UCanonical<chalk_ir::InEnvironment<chalk_ir::Goal>>,
-) -> Option<chalk_solve::Solution> {
-    let context = ChalkContext { db, krate };
-    let solver = db.trait_solver(krate);
-    debug!("solve goal: {:?}", goal);
-    let solution = solver.lock().solve(&context, goal);
-    debug!("solve({:?}) => {:?}", goal, solution);
-    solution
 }
 
 /// A set of clauses that we assume to be true. E.g. if we are inside this function:
