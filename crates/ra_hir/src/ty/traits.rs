@@ -4,6 +4,7 @@ use std::sync::Arc;
 use chalk_ir::cast::Cast;
 use log::debug;
 use parking_lot::Mutex;
+use ra_db::salsa;
 use ra_prof::profile;
 use rustc_hash::FxHashSet;
 
@@ -14,7 +15,33 @@ use self::chalk::{from_chalk, ToChalk};
 
 pub(crate) mod chalk;
 
-pub(crate) type Solver = chalk_solve::Solver;
+#[derive(Debug, Clone)]
+pub struct ChalkSolver {
+    krate: Crate,
+    inner: Arc<Mutex<chalk_solve::Solver>>,
+}
+
+impl PartialEq for ChalkSolver {
+    fn eq(&self, other: &ChalkSolver) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+}
+
+impl Eq for ChalkSolver {}
+
+impl ChalkSolver {
+    fn solve(
+        &self,
+        db: &impl HirDatabase,
+        goal: &chalk_ir::UCanonical<chalk_ir::InEnvironment<chalk_ir::Goal>>,
+    ) -> Option<chalk_solve::Solution> {
+        let context = ChalkContext { db, krate: self.krate };
+        debug!("solve goal: {:?}", goal);
+        let solution = self.inner.lock().solve_with_fuel(&context, goal, Some(1000));
+        debug!("solve({:?}) => {:?}", goal, solution);
+        solution
+    }
+}
 
 /// This controls the maximum size of types Chalk considers. If we set this too
 /// high, we can run into slow edge cases; if we set it too low, Chalk won't
@@ -27,11 +54,15 @@ struct ChalkContext<'a, DB> {
     krate: Crate,
 }
 
-pub(crate) fn trait_solver_query(_db: &impl HirDatabase, _krate: Crate) -> Arc<Mutex<Solver>> {
+pub(crate) fn trait_solver_query(
+    db: &(impl HirDatabase + salsa::Database),
+    krate: Crate,
+) -> ChalkSolver {
+    db.salsa_runtime().report_untracked_read();
     // krate parameter is just so we cache a unique solver per crate
     let solver_choice = chalk_solve::SolverChoice::SLG { max_size: CHALK_SOLVER_MAX_SIZE };
-    debug!("Creating new solver for crate {:?}", _krate);
-    Arc::new(Mutex::new(solver_choice.into_solver()))
+    debug!("Creating new solver for crate {:?}", krate);
+    ChalkSolver { krate, inner: Arc::new(Mutex::new(solver_choice.into_solver())) }
 }
 
 /// Collects impls for the given trait in the whole dependency tree of `krate`.
@@ -127,7 +158,7 @@ pub(crate) fn trait_solve_query(
     // We currently don't deal with universes (I think / hope they're not yet
     // relevant for our use cases?)
     let u_canonical = chalk_ir::UCanonical { canonical, universes: 1 };
-    let solution = solve(db, krate, &u_canonical);
+    let solution = db.trait_solver(krate).solve(db, &u_canonical);
     solution.map(|solution| solution_from_chalk(db, solution))
 }
 
