@@ -59,7 +59,26 @@ impl ProjectRoot {
     }
 
     pub fn include_dir(&self, dir_path: &RelativePath) -> bool {
-        const COMMON_IGNORED_DIRS: &[&str] = &["node_modules", "target", ".git"];
+        const COMMON_IGNORED_DIRS: &[&str] = &[
+            "node_modules",
+            "target",
+            ".git",
+            // 0 .rs files
+            "obj",
+            "build",
+            "ci",
+            "jemalloc",
+            "llvm-emscripten",
+            "llvm",
+            // 3 renderscript.rs files that are not rust
+            "llvm-project",
+            // 20 .rs files used for formatting the book
+            "docs",
+            // A bunch of llvm-related things in src/tools/
+            "lld",
+            "lldb",
+            "clang",
+        ];
         const EXTERNAL_IGNORED_DIRS: &[&str] = &["examples", "tests", "benches"];
 
         let is_ignored = if self.is_member {
